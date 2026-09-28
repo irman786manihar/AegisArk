@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AegisArk Flood Detection Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- TailwindCSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Socket.IO Client -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      background-color: #020617;
+      color: #a5f3fc;
+      font-family: 'Consolas', monospace;
+    }
+    .neon-border {
+      border: 1px solid #0ea5e9;
+      box-shadow: 0 0 10px #0ea5e9;
+    }
+    .title {
+      font-size: 1.8rem;
+      color: #38bdf8;
+      text-shadow: 0 0 15px #38bdf8;
+    }
+    .glow {
+      text-shadow: 0 0 5px #67e8f9;
+    }
+    .scrollbar::-webkit-scrollbar {
+      height: 6px;
+    }
+    .scrollbar::-webkit-scrollbar-thumb {
+      background: #0ea5e9;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+
+<body class="p-4">
+  <h1 class="title mb-4">🛰️ AegisArk Flood Detection Dashboard</h1>
+
+  <!-- Status bar -->
+  <div class="flex justify-between items-center mb-4">
+    <div id="status" class="text-green-400 glow">🟢 Connected</div>
+    <div id="lastUpdate" class="text-sm text-cyan-400">Awaiting detections...</div>
+  </div>
+
+  <!-- Layout: table + gallery -->
+  <div class="grid grid-cols-3 gap-4">
+    <!-- Detection Table -->
+    <div class="col-span-2 p-3 neon-border rounded-lg">
+      <h2 class="text-lg text-cyan-300 mb-2">📋 Live Detection Log</h2>
+      <table class="w-full text-sm">
+        <thead class="border-b border-cyan-700 text-cyan-400">
+          <tr>
+            <th class="text-left py-1">Time (UTC)</th>
+            <th class="text-left py-1">Label</th>
+            <th class="text-left py-1">Confidence</th>
+            <th class="text-left py-1">Track ID</th>
+          </tr>
+        </thead>
+        <tbody id="logTable" class="text-cyan-200"></tbody>
+      </table>
+    </div>
+
+    <!-- Snapshot Gallery -->
+    <div class="col-span-1 p-3 neon-border rounded-lg">
+      <h2 class="text-lg text-cyan-300 mb-2">🖼️ Snapshots</h2>
+      <div id="gallery" class="flex overflow-x-auto space-x-2 scrollbar"></div>
+    </div>
+  </div>
+
+  <!-- Analytics -->
+  <div class="mt-6 p-3 neon-border rounded-lg">
+    <h2 class="text-lg text-cyan-300 mb-2">📊 Detection Analytics</h2>
+    <canvas id="classChart" height="100"></canvas>
+  </div>
+
+  <script>
+    const socket = io();
+
+    const statusEl = document.getElementById('status');
+    const logTable = document.getElementById('logTable');
+    const gallery = document.getElementById('gallery');
+    const lastUpdate = document.getElementById('lastUpdate');
+
+    // Chart setup
+    const ctx = document.getElementById('classChart').getContext('2d');
+    const classCounts = { person: 0, boat: 0, dog: 0 };
+    const chart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: Object.keys(classCounts),
+        datasets: [{
+          label: 'Detections',
+          data: Object.values(classCounts),
+          backgroundColor: ['#38bdf8', '#0ea5e9', '#22d3ee']
+        }]
+      },
+      options: {
+        scales: {
+          x: { ticks: { color: '#a5f3fc' } },
+          y: { ticks: { color: '#a5f3fc' } }
+        },
+        plugins: { legend: { labels: { color: '#a5f3fc' } } }
+      }
+    });
+
+    // Socket.IO events
+    socket.on('connect', () => {
+      statusEl.textContent = '🟢 Connected to AegisArk Server';
+      statusEl.classList.remove('text-red-400');
+      statusEl.classList.add('text-green-400');
+    });
+
+    socket.on('disconnect', () => {
+      statusEl.textContent = '🔴 Disconnected';
+      statusEl.classList.remove('text-green-400');
+      statusEl.classList.add('text-red-400');
+    });
+
+    socket.on('new_detection', (data) => {
+      console.log('📡 New detection:', data);
+      lastUpdate.textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+
+      // Add to table
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td class="py-1">${data.time}</td>
+        <td class="py-1 text-cyan-400">${data.label}</td>
+        <td class="py-1">${(data.confidence * 100).toFixed(1)}%</td>
+        <td class="py-1">${data.track_id || '-'}</td>`;
+      logTable.prepend(row);
+
+      // Update gallery
+      if (data.image_url) {
+        const img = document.createElement('img');
+        img.src = data.image_url;
+        img.className = "w-28 h-20 object-cover rounded-md border border-cyan-700 hover:scale-105 transition";
+        gallery.prepend(img);
+        if (gallery.children.length > 10) gallery.removeChild(gallery.lastChild);
+      }
+
+      // Update chart
+      if (classCounts[data.label] !== undefined) classCounts[data.label]++;
+      chart.data.datasets[0].data = Object.values(classCounts);
+      chart.update();
+    });
+  </script>
+</body>
+</html>
